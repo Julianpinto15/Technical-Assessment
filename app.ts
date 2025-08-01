@@ -5,6 +5,7 @@ import logger from "morgan";
 import { setupSwagger } from "./src/docs/swagger";
 import authRoutes from "./routes/authRoutes";
 
+import "./types/index";
 import indexRouter from "./routes/index";
 import usersRouter from "./routes/users";
 
