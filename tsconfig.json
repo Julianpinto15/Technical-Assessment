@@ -13,12 +13,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "typeRoots": ["./node_modules/@types", "./src/types"],
-    "baseUrl": "./",
-    "paths": {
-      "*": ["node_modules/*", "src/types/*"]
-    }
+    "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": ["**/*.ts", "src/**/*", "routes/**/*"],
+  "include": ["src/**/*", "routes/**/*"],
   "exclude": ["node_modules", "dist"]
 }

@@ -7,6 +7,14 @@ import {
   refreshAccessToken,
 } from "../services/authService";
 
+interface AuthenticatedRequest extends Request {
+  user?: {
+    userId: string;
+    email: string;
+    role: string;
+  };
+}
+
 export const register = [
   body("email").isEmail().withMessage("Invalid email"),
   body("password")
@@ -48,9 +56,13 @@ export const login = [
   },
 ];
 
-export const logout = async (req: Request, res: Response) => {
+export const logout = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
   try {
-    await logoutUser(req.user!.userId); // Asumimos que el middleware auth agrega req.user
+    await logoutUser(req.user.userId);
     res.json({ message: "Logged out successfully" });
   } catch (error: any) {
     res.status(400).json({ message: error.message });

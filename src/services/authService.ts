@@ -1,4 +1,4 @@
-import prisma from "../../prismaClient";
+import prisma from "../prismaClient";
 import { hashPassword, comparePassword } from "../utils/hash";
 import {
   generateAccessToken,
@@ -43,7 +43,7 @@ export const loginUser = async (
   const refreshToken = generateRefreshToken(payload);
 
   // Guardar refresh token en la base de datos
-  await prisma.user.update({
+  const updatedUser = await prisma.user.update({
     where: { id: user.id },
     data: { refreshToken, lastLogin: new Date() },
   });

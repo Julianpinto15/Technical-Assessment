@@ -1,8 +1,16 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../services/tokenService";
 
+interface AuthenticatedRequest extends Request {
+  user?: {
+    userId: string;
+    email: string;
+    role: string;
+  };
+}
+
 export const authenticate = (
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) => {
@@ -14,7 +22,7 @@ export const authenticate = (
   const token = authHeader.split(" ")[1];
   try {
     const payload = verifyAccessToken(token);
-    req.user = payload; // Agregar payload al request
+    req.user = payload; // Asignar payload al req.user
     next();
   } catch (error) {
     res.status(401).json({ message: "Invalid token" });
