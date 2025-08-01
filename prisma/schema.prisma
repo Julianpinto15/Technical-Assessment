@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  role        String   @default("user")
+  createdAt   DateTime @default(now())
+  lastLogin   DateTime?
+  refreshToken String?
+
+  // Relaciones futuras
+  salesData     SalesData[]
+  forecasts     Forecast[]
+  configurations Configuration?
+}
+
+model SalesData {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  sku         String
+  date        DateTime
+  quantity    Int
+  price       Float
+  promotion   Boolean
+  uploadedAt  DateTime @default(now())
+  fileName    String
+  dataVersion Int
+}
+
+model Forecast {
+  id              String   @id @default(uuid())
+  user            User     @relation(fields: [userId], references: [id])
+  userId          String
+  sku             String
+  forecastDate    DateTime
+  baseValue       Float
+  upperBound      Float
+  lowerBound      Float
+  confidenceLevel Int
+  generatedAt     DateTime @default(now())
+  modelVersion    String
+}
+
+model Configuration {
+  id                  String   @id @default(uuid())
+  user                User     @relation(fields: [userId], references: [id])
+  userId              String   @unique
+  confidenceLevel     Int
+  forecastHorizon     Int
+  alertThresholds     Json
+  notificationSettings Json
+}
