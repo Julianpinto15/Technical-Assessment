@@ -48,6 +48,17 @@ export const loginUser = async (
     data: { refreshToken, lastLogin: new Date() },
   });
 
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken, lastLogin: new Date() },
+    });
+    console.log("Usuario actualizado:", updatedUser); // Depuración
+  } catch (error: any) {
+    console.error("Error al actualizar usuario:", error.message); // Depuración
+    throw new Error("Error al guardar el refresh token");
+  }
+
   return { accessToken, refreshToken };
 };
 
