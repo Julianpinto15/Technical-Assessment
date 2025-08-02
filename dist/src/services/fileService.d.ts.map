@@ -1,0 +1,1 @@
+{"version":3,"file":"fileService.d.ts","sourceRoot":"","sources":["../../../src/services/fileService.ts"],"names":[],"mappings":"AAOA,UAAU,eAAe;IACvB,MAAM,EAAE,MAAM,CAAC;IACf,QAAQ,EAAE,MAAM,CAAC;IACjB,YAAY,EAAE,MAAM,CAAC;IACrB,MAAM,EAAE,MAAM,CAAC;CAChB;AAED,eAAO,MAAM,iBAAiB,GAC5B,OAAO,eAAe,KACrB,OAAO,CAAC,IAAI,CAgCd,CAAC"}

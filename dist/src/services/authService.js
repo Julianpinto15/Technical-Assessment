@@ -29,10 +29,21 @@ const loginUser = async (input) => {
     const accessToken = (0, tokenService_1.generateAccessToken)(payload);
     const refreshToken = (0, tokenService_1.generateRefreshToken)(payload);
     // Guardar refresh token en la base de datos
-    await prismaClient_1.default.user.update({
+    const updatedUser = await prismaClient_1.default.user.update({
         where: { id: user.id },
         data: { refreshToken, lastLogin: new Date() },
     });
+    try {
+        const updatedUser = await prismaClient_1.default.user.update({
+            where: { id: user.id },
+            data: { refreshToken, lastLogin: new Date() },
+        });
+        console.log("Usuario actualizado:", updatedUser); // Depuración
+    }
+    catch (error) {
+        console.error("Error al actualizar usuario:", error.message); // Depuración
+        throw new Error("Error al guardar el refresh token");
+    }
     return { accessToken, refreshToken };
 };
 exports.loginUser = loginUser;

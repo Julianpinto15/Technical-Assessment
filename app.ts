@@ -5,6 +5,7 @@ import logger from "morgan";
 // import cors from "cors";
 import { setupSwagger } from "./src/docs/swagger";
 import authRoutes from "./routes/authRoutes";
+import fileRoutes from "./routes/fileRoutes";
 
 import indexRouter from "./routes/index";
 import usersRouter from "./routes/users";
@@ -21,6 +22,7 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/", indexRouter);
 app.use("/users", usersRouter);
 app.use("/api/auth", authRoutes);
+app.use("/api/files", fileRoutes);
 setupSwagger(app);
 
 // Manejador de errores global
