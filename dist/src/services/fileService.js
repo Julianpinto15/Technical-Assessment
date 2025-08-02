@@ -13,28 +13,34 @@ const processFileUpload = async (input) => {
         rawData = (0, fileValidator_1.parseCSV)(input.buffer);
     }
     else if (input.mimetype ===
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+        input.mimetype === "application/vnd.ms-excel") {
         rawData = await (0, fileValidator_1.parseExcel)(input.buffer);
     }
     else {
-        throw new Error("Unsupported file format");
+        throw new Error("Formato de archivo no soportado");
     }
     // Validar datos
     const validatedData = (0, fileValidator_1.validateSalesData)(rawData);
-    // Guardar en la base de datos
+    const totalRows = validatedData.length;
+    // Insertar en la base de datos
     await prismaClient_1.default.salesData.createMany({
         data: validatedData.map((item) => ({
             userId: input.userId,
             sku: item.sku,
-            date: new Date(item.fecha), // Usar fecha validada
+            date: new Date(item.fecha),
             quantity: item.cantidad,
             price: item.precio,
             promotion: item.promocion,
             uploadedAt: new Date(),
             fileName: input.originalname,
-            dataVersion: 1, // Versión inicial
+            dataVersion: 1,
+            category: item.categoria,
         })),
+        skipDuplicates: true, // si quieres evitar duplicados
     });
+    // Notificar progreso
+    input.onProgress?.(100);
 };
 exports.processFileUpload = processFileUpload;
 //# sourceMappingURL=fileService.js.map

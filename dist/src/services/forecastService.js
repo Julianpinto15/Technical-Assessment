@@ -17,23 +17,46 @@ async function generateForecasts(userId, sku) {
     });
     if (history.length < 2)
         throw new Error("Not enough historical data to forecast");
+    // Seleccionar un solo valor para horizon y confidenceLevel
+    const horizon = Math.max(...config.forecastHorizon); // Horizonte más largo
+    const confidenceLevel = Math.max(...config.confidenceLevel); // Convertir a decimal
     const simulated = (0, forecastSimulator_1.simulateForecastsWithValidation)({
         history,
-        horizon: config.forecastHorizon,
-        confidenceLevel: config.confidenceLevel,
+        horizon,
+        confidenceLevel,
     });
-    const modelVersion = "sim-v1";
-    const records = simulated.map((item) => ({
-        userId,
+    const modelVersion = "v1.0";
+    const generatedAt = new Date();
+    const dataQualityScore = 0.87; // Puedes calcular esto dinámicamente
+    // Guardar en base de datos
+    await prismaClient_1.default.forecast.createMany({
+        data: simulated.map((item) => ({
+            userId,
+            sku,
+            forecastDate: item.forecastDate,
+            baseValue: item.baseValue,
+            upperBound: item.upperBound,
+            lowerBound: item.lowerBound,
+            confidenceLevel,
+            seasonalFactor: item.seasonalFactor,
+            trendComponent: item.trendComponent,
+            generatedAt,
+            modelVersion,
+        })),
+    });
+    // Retornar estructura extendida para respuesta JSON
+    return simulated.map((item) => ({
         sku,
-        forecastDate: item.forecastDate,
-        baseValue: item.baseValue,
-        upperBound: item.upperBound,
-        lowerBound: item.lowerBound,
-        confidenceLevel: config.confidenceLevel,
-        modelVersion,
+        forecast_period: item.forecastDate,
+        base_forecast: item.baseValue,
+        upper_bound: item.upperBound,
+        lower_bound: item.lowerBound,
+        confidence_level: confidenceLevel,
+        seasonal_factor: item.seasonalFactor,
+        trend_component: item.trendComponent,
+        generated_at: generatedAt.toISOString(),
+        model_version: modelVersion,
+        data_quality_score: dataQualityScore,
     }));
-    await prismaClient_1.default.forecast.createMany({ data: records });
-    return records;
 }
 //# sourceMappingURL=forecastService.js.map

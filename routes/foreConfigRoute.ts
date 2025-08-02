@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { postForecast } from "../src/controllers/forecastController";
+import { setForecastConfig } from "../src/controllers/foreConfigController";
 import { authenticate } from "../src/middlewares/authMiddleware";
 
 const router = Router();
 
-router.post("/simulate", authenticate, postForecast);
+router.post("/config", authenticate, setForecastConfig);
 
 export default router;

@@ -1,7 +1,19 @@
 import { parse } from "csv-parse/sync";
-import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
+import { Buffer } from "buffer";
 
-interface SalesDataInput {
+// Definir posibles nombres de columnas para flexibilidad
+const columnMappings = {
+  sku: ["sku", "product_id", "codigo_producto"],
+  fecha: ["fecha", "date", "transaction_date"],
+  cantidad: ["cantidad_vendida", "cantidad", "quantity", "units_sold"],
+  precio: ["precio", "price", "unit_price"],
+  promocion: ["promocion_activa", "promocion", "promotion", "is_promotion"],
+  categoria: ["categoria", "category", "product_category"],
+};
+
+// Interfaz para los datos validados
+interface ValidatedRow {
   sku: string;
   fecha: string;
   cantidad: number;
@@ -10,149 +22,215 @@ interface SalesDataInput {
   categoria: string;
 }
 
-export const validateSalesData = (data: any[]): SalesDataInput[] => {
-  const validatedData: SalesDataInput[] = [];
-  const errors: string[] = [];
+// Función para normalizar nombres de columnas
+function normalizeColumnName(name: string): string {
+  const lowerName = name.toLowerCase().trim();
+  for (const [key, aliases] of Object.entries(columnMappings)) {
+    if (aliases.includes(lowerName)) {
+      return key;
+    }
+  }
+  return lowerName;
+}
 
-  const columnMapping = {
-    sku: ["sku", "product_id", "codigo"],
-    fecha: ["fecha", "date", "fecha_venta"],
-    cantidad: ["cantidad", "cantidad_vendida", "quantity", "units_sold"],
-    precio: ["precio", "price", "unit_price"],
-    promocion: ["promocion", "promocion_activa", "promotion", "is_promotion"],
-    categoria: ["categoria", "category", "producto_categoria"],
-  };
+// Función para normalizar valores booleanos
+function normalizeBoolean(value: any): boolean {
+  const strValue = String(value).toLowerCase().trim();
+  if (["true", "1", "sí", "si", "yes"].includes(strValue)) return true;
+  if (["false", "0", "no"].includes(strValue)) return false;
+  throw new Error(`Valor inválido para promoción: ${value}`);
+}
 
-  data.forEach((row, index) => {
-    const rowErrors: string[] = [];
-    const mappedRow: any = {};
+// Función para convertir número serial de Excel a fecha
+function excelSerialToDate(serial: number): Date {
+  const excelEpoch = new Date(1900, 0, 1);
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const adjustedSerial = serial > 59 ? serial - 1 : serial;
+  return new Date(
+    excelEpoch.getTime() + (adjustedSerial - 1) * millisecondsPerDay
+  );
+}
 
-    for (const [key, aliases] of Object.entries(columnMapping)) {
-      const value = aliases.find((alias) => row[alias] !== undefined);
-      if (value) {
-        mappedRow[key] = row[value];
-      } else {
-        rowErrors.push(`❌ Fila ${index + 2}: Falta la columna "${key}"`);
+// Función para validar y parsear fechas
+function parseDate(value: any): string {
+  // Si es un número (fecha serial de Excel)
+  if (typeof value === "number" && !isNaN(value)) {
+    const date = excelSerialToDate(value);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split("T")[0];
+    }
+  }
+
+  const strValue = String(value).trim();
+
+  // ISO 8601 (YYYY-MM-DD)
+  const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (isoRegex.test(strValue)) {
+    const date = new Date(strValue);
+    if (!isNaN(date.getTime())) return strValue;
+  }
+
+  // DD/MM/YYYY, MM/DD/YYYY, M/DD/YY, D/MM/YY
+  const dateRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/;
+  const match = strValue.match(dateRegex);
+  if (match) {
+    let [_, first, second, year] = match;
+    let fullYear = parseInt(year);
+    if (year.length === 2) {
+      fullYear = parseInt(`20${year}`); // Asume años 20XX
+      if (fullYear < 2000 || fullYear > 2099) {
+        throw new Error(`Año inválido: ${year}`);
       }
     }
 
-    // SKU
-    if (!/^[a-zA-Z0-9]{3,20}$/.test(mappedRow.sku)) {
-      rowErrors.push(`❌ Fila ${index + 2}: SKU inválido "${mappedRow.sku}"`);
-    }
-
-    // FECHA (formato flexible)
-    const rawDate = mappedRow.fecha;
-    const parsedDate = parseFlexibleDate(rawDate);
-    if (!parsedDate) {
-      rowErrors.push(`❌ Fila ${index + 2}: Fecha inválida "${rawDate}"`);
-    }
-
-    // CANTIDAD
-    const cantidad = parseInt(mappedRow.cantidad);
-    if (isNaN(cantidad) || cantidad < 1 || cantidad > 100000) {
-      rowErrors.push(
-        `❌ Fila ${index + 2}: Cantidad inválida "${mappedRow.cantidad}"`
+    // Probar DD/MM/YYYY o D/MM/YY
+    if (parseInt(first) <= 31 && parseInt(second) <= 12) {
+      const ddmmyyyy = new Date(
+        fullYear,
+        parseInt(second) - 1,
+        parseInt(first)
       );
+      if (!isNaN(ddmmyyyy.getTime())) {
+        return ddmmyyyy.toISOString().split("T")[0];
+      }
     }
 
-    // PRECIO
-    const precio = parseFloat(mappedRow.precio);
-    if (
-      isNaN(precio) ||
-      precio < 0 ||
-      mappedRow.precio.toString().split(".")[1]?.length > 4
-    ) {
-      rowErrors.push(
-        `❌ Fila ${index + 2}: Precio inválido "${mappedRow.precio}"`
+    // Probar MM/DD/YYYY o M/DD/YY
+    if (parseInt(first) <= 12 && parseInt(second) <= 31) {
+      const mmddyyyy = new Date(
+        fullYear,
+        parseInt(first) - 1,
+        parseInt(second)
       );
+      if (!isNaN(mmddyyyy.getTime())) {
+        return mmddyyyy.toISOString().split("T")[0];
+      }
     }
+  }
 
-    // PROMOCION (normalización)
-    const normPromo = normalizeBoolean(mappedRow.promocion);
-    if (normPromo === null) {
-      rowErrors.push(
-        `❌ Fila ${index + 2}: Promoción inválida "${mappedRow.promocion}"`
-      );
+  throw new Error(`Fecha inválida: ${value}`);
+}
+
+// Función para parsear CSV
+export function parseCSV(buffer: Buffer): any[] {
+  return parse(buffer, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+    cast: false,
+  });
+}
+
+// Función para parsear Excel
+export async function parseExcel(buffer: Buffer): Promise<any[]> {
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json(sheet, {
+    raw: false,
+    dateNF: "yyyy-mm-dd",
+  });
+}
+
+// Función para validar datos
+export function validateSalesData(rawData: any[]): ValidatedRow[] {
+  const errors: string[] = [];
+  const seenSKUs = new Set<string>();
+  const validatedData: ValidatedRow[] = [];
+
+  if (!rawData || rawData.length === 0) {
+    throw new Error("El archivo está vacío o no contiene datos válidos");
+  }
+
+  // Normalizar nombres de columnas
+  const normalizedData = rawData.map((row, index) => {
+    const normalizedRow: any = {};
+    for (const key of Object.keys(row)) {
+      normalizedRow[normalizeColumnName(key)] = row[key];
     }
+    return { row: normalizedRow, index: index + 2 }; // Fila 1 es encabezado
+  });
 
-    // CATEGORIA
-    if (!mappedRow.categoria || typeof mappedRow.categoria !== "string") {
-      rowErrors.push(`❌ Fila ${index + 2}: Categoría inválida`);
-    }
+  // Validar que todas las columnas requeridas estén presentes
+  const requiredColumns = [
+    "sku",
+    "fecha",
+    "cantidad",
+    "precio",
+    "promocion",
+    "categoria",
+  ];
+  const firstRow = normalizedData[0]?.row || {};
+  const missingColumns = requiredColumns.filter((col) => !(col in firstRow));
+  if (missingColumns.length > 0) {
+    throw new Error(`Faltan columnas requeridas: ${missingColumns.join(", ")}`);
+  }
 
-    if (rowErrors.length > 0) {
-      errors.push(...rowErrors);
-    } else {
+  // Validar cada fila
+  for (const { row, index } of normalizedData) {
+    try {
+      // Validar SKU
+      const sku = String(row.sku).trim();
+      if (!/^[a-zA-Z0-9]{3,20}$/.test(sku)) {
+        throw new Error(
+          `SKU inválido: debe ser alfanumérico, 3-20 caracteres, sin espacios`
+        );
+      }
+      // Verificar unicidad de SKU + fecha
+      const skuDateKey = `${sku}_${row.fecha}`;
+      if (seenSKUs.has(skuDateKey)) {
+        throw new Error(`SKU duplicado: "${sku}" para la misma fecha`);
+      }
+      seenSKUs.add(skuDateKey);
+
+      // Validar fecha
+      const fecha = parseDate(row.fecha);
+
+      // Validar cantidad
+      const cantidadStr = String(row.cantidad).trim();
+      const cantidad = parseInt(cantidadStr, 10);
+      if (isNaN(cantidad) || cantidad < 1 || cantidad > 100000) {
+        throw new Error(
+          `Cantidad inválida: debe ser un entero entre 1 y 100,000`
+        );
+      }
+
+      // Validar precio
+      const precioStr = String(row.precio).trim();
+      const precio = parseFloat(precioStr);
+      if (isNaN(precio) || precio <= 0) {
+        throw new Error(`Precio inválido: debe ser un decimal positivo`);
+      }
+      const decimalPlaces = (precioStr.split(".")[1] || "").length;
+      if (decimalPlaces > 4) {
+        throw new Error(`Precio inválido: máximo 4 decimales permitidos`);
+      }
+
+      // Validar promoción
+      const promocion = normalizeBoolean(row.promocion);
+
+      // Validar categoría
+      const categoria = String(row.categoria).trim();
+      if (!categoria) {
+        throw new Error(`Categoría inválida: no puede estar vacía`);
+      }
+
       validatedData.push({
-        sku: mappedRow.sku,
-        fecha: parsedDate!.toISOString(), // Fecha válida en ISO
+        sku,
+        fecha,
         cantidad,
         precio,
-        promocion: normPromo!,
-        categoria: mappedRow.categoria,
+        promocion,
+        categoria,
       });
+    } catch (error: any) {
+      errors.push(`❌ Fila ${index}: ${error.message}`);
     }
-  });
+  }
 
   if (errors.length > 0) {
     throw new Error(`Errores de validación:\n${errors.join("\n")}`);
   }
 
   return validatedData;
-};
-
-// 🔁 Normalizador de booleanos
-function normalizeBoolean(value: any): boolean | null {
-  if (typeof value !== "string") return null;
-  const val = value.trim().toLowerCase();
-  if (["true", "1", "si", "sí", "yes"].includes(val)) return true;
-  if (["false", "0", "no"].includes(val)) return false;
-  return null;
 }
-
-// 📅 Detección flexible de fechas
-function parseFlexibleDate(dateStr: string): Date | null {
-  if (!dateStr) return null;
-  const parts = dateStr.split(/[\/\-]/);
-  let d: Date;
-
-  if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      // YYYY-MM-DD
-      d = new Date(dateStr);
-    } else if (parseInt(parts[1]) > 12) {
-      // DD/MM/YYYY
-      d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-    } else {
-      // MM/DD/YYYY
-      d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
-    }
-  } else {
-    d = new Date(dateStr);
-  }
-
-  return isNaN(d.getTime()) ? null : d;
-}
-
-export const parseCSV = (buffer: Buffer): any[] => {
-  return parse(buffer, { columns: true, skip_empty_lines: true });
-};
-
-export const parseExcel = async (buffer: Buffer): Promise<any[]> => {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer.buffer as ArrayBuffer);
-  const worksheet = workbook.worksheets[0];
-  const rows: any[] = [];
-
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return; // Saltar encabezados
-    const rowData: any = {};
-    worksheet.getRow(1).eachCell((cell, colNumber) => {
-      rowData[cell.text] = row.getCell(colNumber).text;
-    });
-    rows.push(rowData);
-  });
-
-  return rows;
-};

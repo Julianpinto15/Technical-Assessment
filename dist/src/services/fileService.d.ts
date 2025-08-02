@@ -3,6 +3,7 @@ interface FileUploadInput {
     mimetype: string;
     originalname: string;
     userId: string;
+    onProgress?: (progress: number) => void;
 }
 export declare const processFileUpload: (input: FileUploadInput) => Promise<void>;
 export {};

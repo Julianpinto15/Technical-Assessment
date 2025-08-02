@@ -7,6 +7,7 @@ import { setupSwagger } from "./src/docs/swagger";
 import authRoutes from "./routes/authRoutes";
 import fileRoutes from "./routes/fileRoutes";
 import forecastRoutes from "./routes/forecastRoutes";
+import forecastConfigRoutes from "./routes/foreConfigRoute";
 
 import indexRouter from "./routes/index";
 import usersRouter from "./routes/users";
@@ -25,6 +26,7 @@ app.use("/users", usersRouter);
 app.use("/api/auth", authRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/forecast", forecastRoutes);
+app.use("/api/forecast", forecastConfigRoutes);
 setupSwagger(app);
 
 // Manejador de errores global

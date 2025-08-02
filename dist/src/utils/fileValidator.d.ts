@@ -1,4 +1,5 @@
-interface SalesDataInput {
+import { Buffer } from "buffer";
+interface ValidatedRow {
     sku: string;
     fecha: string;
     cantidad: number;
@@ -6,8 +7,8 @@ interface SalesDataInput {
     promocion: boolean;
     categoria: string;
 }
-export declare const validateSalesData: (data: any[]) => SalesDataInput[];
-export declare const parseCSV: (buffer: Buffer) => any[];
-export declare const parseExcel: (buffer: Buffer) => Promise<any[]>;
+export declare function parseCSV(buffer: Buffer): any[];
+export declare function parseExcel(buffer: Buffer): Promise<any[]>;
+export declare function validateSalesData(rawData: any[]): ValidatedRow[];
 export {};
 //# sourceMappingURL=fileValidator.d.ts.map
