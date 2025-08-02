@@ -1,0 +1,1 @@
+{"version":3,"file":"forecastSimulator.d.ts","sourceRoot":"","sources":["../../../src/utils/forecastSimulator.ts"],"names":[],"mappings":"AAAA,wBAAgB,+BAA+B,CAAC,EAC9C,OAAO,EACP,OAAO,EACP,eAAe,GAChB,EAAE;IACD,OAAO,EAAE;QAAE,IAAI,EAAE,IAAI,CAAC;QAAC,QAAQ,EAAE,MAAM,CAAA;KAAE,EAAE,CAAC;IAC5C,OAAO,EAAE,MAAM,CAAC;IAChB,eAAe,EAAE,MAAM,CAAC;CACzB;;;;;IAmCA"}

@@ -9,7 +9,6 @@ const exceljs_1 = __importDefault(require("exceljs"));
 const validateSalesData = (data) => {
     const validatedData = [];
     const errors = [];
-    // Mapeo flexible de columnas
     const columnMapping = {
         sku: ["sku", "product_id", "codigo"],
         fecha: ["fecha", "date", "fecha_venta"],
@@ -21,73 +20,102 @@ const validateSalesData = (data) => {
     data.forEach((row, index) => {
         const rowErrors = [];
         const mappedRow = {};
-        // Mapear las columnas dinámicamente
         for (const [key, aliases] of Object.entries(columnMapping)) {
             const value = aliases.find((alias) => row[alias] !== undefined);
             if (value) {
                 mappedRow[key] = row[value];
             }
             else {
-                rowErrors.push(`Missing or invalid ${key} at row ${index + 1}`);
+                rowErrors.push(`❌ Fila ${index + 2}: Falta la columna "${key}"`);
             }
         }
-        // Validar SKU
+        // SKU
         if (!/^[a-zA-Z0-9]{3,20}$/.test(mappedRow.sku)) {
-            rowErrors.push(`Invalid SKU at row ${index + 1}`);
+            rowErrors.push(`❌ Fila ${index + 2}: SKU inválido "${mappedRow.sku}"`);
         }
-        // Validar fecha (detección automática de formatos)
-        const dateFormats = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"];
-        let date = new Date(mappedRow.fecha);
-        for (const format of dateFormats) {
-            date = new Date(mappedRow.fecha);
-            if (!isNaN(date.getTime()))
-                break;
+        // FECHA (formato flexible)
+        const rawDate = mappedRow.fecha;
+        const parsedDate = parseFlexibleDate(rawDate);
+        if (!parsedDate) {
+            rowErrors.push(`❌ Fila ${index + 2}: Fecha inválida "${rawDate}"`);
         }
-        if (isNaN(date.getTime())) {
-            rowErrors.push(`Invalid date at row ${index + 1}`);
+        // CANTIDAD
+        const cantidad = parseInt(mappedRow.cantidad);
+        if (isNaN(cantidad) || cantidad < 1 || cantidad > 100000) {
+            rowErrors.push(`❌ Fila ${index + 2}: Cantidad inválida "${mappedRow.cantidad}"`);
         }
-        // Validar cantidad
-        const quantity = parseInt(mappedRow.cantidad);
-        if (isNaN(quantity) || quantity < 1 || quantity > 100000) {
-            rowErrors.push(`Invalid quantity at row ${index + 1}`);
+        // PRECIO
+        const precio = parseFloat(mappedRow.precio);
+        if (isNaN(precio) ||
+            precio < 0 ||
+            mappedRow.precio.toString().split(".")[1]?.length > 4) {
+            rowErrors.push(`❌ Fila ${index + 2}: Precio inválido "${mappedRow.precio}"`);
         }
-        // Validar precio
-        const price = parseFloat(mappedRow.precio);
-        if (isNaN(price) ||
-            price < 0 ||
-            price.toString().split(".")[1]?.length > 4) {
-            rowErrors.push(`Invalid price at row ${index + 1}`);
+        // PROMOCION (normalización)
+        const normPromo = normalizeBoolean(mappedRow.promocion);
+        if (normPromo === null) {
+            rowErrors.push(`❌ Fila ${index + 2}: Promoción inválida "${mappedRow.promocion}"`);
         }
-        // Validar promoción
-        const promotion = ["true", "1", "si", "yes"].includes(mappedRow.promocion?.toLowerCase());
-        if (mappedRow.promocion &&
-            !["true", "false", "1", "0", "si", "no", "yes", "no"].includes(mappedRow.promocion.toLowerCase())) {
-            rowErrors.push(`Invalid promotion at row ${index + 1}`);
-        }
-        // Validar categoría
+        // CATEGORIA
         if (!mappedRow.categoria || typeof mappedRow.categoria !== "string") {
-            rowErrors.push(`Invalid category at row ${index + 1}`);
+            rowErrors.push(`❌ Fila ${index + 2}: Categoría inválida`);
         }
-        if (rowErrors.length === 0) {
+        if (rowErrors.length > 0) {
+            errors.push(...rowErrors);
+        }
+        else {
             validatedData.push({
                 sku: mappedRow.sku,
-                fecha: mappedRow.fecha,
-                cantidad: quantity,
-                precio: price,
-                promocion: promotion,
+                fecha: parsedDate.toISOString(), // Fecha válida en ISO
+                cantidad,
+                precio,
+                promocion: normPromo,
                 categoria: mappedRow.categoria,
             });
         }
-        else {
-            errors.push(...rowErrors);
-        }
     });
     if (errors.length > 0) {
-        throw new Error(`Validation errors:\n${errors.join("\n")}`);
+        throw new Error(`Errores de validación:\n${errors.join("\n")}`);
     }
     return validatedData;
 };
 exports.validateSalesData = validateSalesData;
+// 🔁 Normalizador de booleanos
+function normalizeBoolean(value) {
+    if (typeof value !== "string")
+        return null;
+    const val = value.trim().toLowerCase();
+    if (["true", "1", "si", "sí", "yes"].includes(val))
+        return true;
+    if (["false", "0", "no"].includes(val))
+        return false;
+    return null;
+}
+// 📅 Detección flexible de fechas
+function parseFlexibleDate(dateStr) {
+    if (!dateStr)
+        return null;
+    const parts = dateStr.split(/[\/\-]/);
+    let d;
+    if (parts.length === 3) {
+        if (parts[0].length === 4) {
+            // YYYY-MM-DD
+            d = new Date(dateStr);
+        }
+        else if (parseInt(parts[1]) > 12) {
+            // DD/MM/YYYY
+            d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        }
+        else {
+            // MM/DD/YYYY
+            d = new Date(`${parts[2]}-${parts[0]}-${parts[1]}`);
+        }
+    }
+    else {
+        d = new Date(dateStr);
+    }
+    return isNaN(d.getTime()) ? null : d;
+}
 const parseCSV = (buffer) => {
     return (0, sync_1.parse)(buffer, { columns: true, skip_empty_lines: true });
 };
