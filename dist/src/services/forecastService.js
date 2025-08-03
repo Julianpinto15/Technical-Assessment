@@ -9,7 +9,7 @@ exports.getForecastMetrics = getForecastMetrics;
 const prismaClient_1 = __importDefault(require("../prismaClient"));
 const forecastSimulator_1 = require("../utils/forecastSimulator");
 const alertService_1 = require("./alertService");
-async function generateForecasts(userId, sku) {
+async function generateForecasts(userId, sku, forecastPeriod) {
     const config = await prismaClient_1.default.configuration.findUnique({ where: { userId } });
     if (!config)
         throw new Error("No forecast configuration found for user");
@@ -22,13 +22,52 @@ async function generateForecasts(userId, sku) {
         throw new Error("Not enough historical data to forecast");
     const horizon = Math.max(...config.forecastHorizon);
     const confidenceLevel = Math.max(...config.confidenceLevel);
+    // Usar forecastPeriod si se proporciona, o la última fecha de history como base
+    const baseDate = forecastPeriod
+        ? new Date(forecastPeriod)
+        : history[history.length - 1].date;
+    // Validar que baseDate es una fecha válida
+    if (isNaN(baseDate.getTime())) {
+        throw new Error("Invalid forecast_period format");
+    }
     const simulated = (0, forecastSimulator_1.simulateForecastsWithValidation)({
         history,
         horizon,
         confidenceLevel,
+        baseDate,
     });
     const modelVersion = "v1.0";
     const generatedAt = new Date();
+    // NUEVA LÓGICA: Verificar pronósticos existentes para evitar duplicados
+    const existingForecasts = await prismaClient_1.default.forecast.findMany({
+        where: {
+            userId,
+            sku,
+            forecastDate: { in: simulated.map((item) => item.forecastDate) },
+        },
+        select: { forecastDate: true },
+    });
+    const existingDates = new Set(existingForecasts.map((f) => f.forecastDate.toISOString()));
+    // Filtrar solo los pronósticos que no existen ya
+    const newForecasts = simulated.filter((item) => !existingDates.has(item.forecastDate.toISOString()));
+    // Solo crear pronósticos si hay nuevos
+    if (newForecasts.length > 0) {
+        await prismaClient_1.default.forecast.createMany({
+            data: newForecasts.map((item) => ({
+                userId,
+                sku,
+                forecastDate: item.forecastDate,
+                baseValue: item.baseValue,
+                upperBound: item.upperBound,
+                lowerBound: item.lowerBound,
+                confidenceLevel,
+                seasonalFactor: item.seasonalFactor,
+                trendComponent: item.trendComponent,
+                generatedAt,
+                modelVersion,
+            })),
+        });
+    }
     // Calcular data_quality_score dinámicamente
     let dataQualityScore = 0.87;
     const sales = await prismaClient_1.default.salesData.findMany({
@@ -46,28 +85,18 @@ async function generateForecasts(userId, sku) {
         }
     }
     if (matchedCount > 0) {
-        dataQualityScore = 1 - totalError / matchedCount;
+        dataQualityScore = Math.max(0, Math.min(1, 1 - totalError / matchedCount));
     }
-    const forecasts = await prismaClient_1.default.forecast.createMany({
-        data: simulated.map((item) => ({
-            userId,
-            sku,
-            forecastDate: item.forecastDate,
-            baseValue: item.baseValue,
-            upperBound: item.upperBound,
-            lowerBound: item.lowerBound,
-            confidenceLevel,
-            seasonalFactor: item.seasonalFactor,
-            trendComponent: item.trendComponent,
-            generatedAt,
-            modelVersion,
-        })),
-    });
+    // Generar alertas para todos los pronósticos simulados
     const alerts = await (0, alertService_1.checkAlerts)(userId, simulated.map((item) => ({
         sku,
         data_quality_score: dataQualityScore,
         base_forecast: item.baseValue,
+        forecastDate: item.forecastDate, // CORRECCIÓN: Agregar forecastDate que faltaba
     })));
+    // Depuración para verificar alertas
+    console.log("Generated alerts:", alerts);
+    // Retornar todos los pronósticos simulados (nuevos y existentes)
     return simulated.map((item) => ({
         sku,
         forecast_period: item.forecastDate.toISOString(),
@@ -80,7 +109,9 @@ async function generateForecasts(userId, sku) {
         generated_at: generatedAt.toISOString(),
         model_version: modelVersion,
         data_quality_score: dataQualityScore,
-        alerts: alerts.filter((alert) => alert.includes(item.forecastDate.toISOString())),
+        alerts: alerts
+            .filter((alert) => alert.forecastDate === item.forecastDate.toISOString())
+            .map((alert) => alert.message),
     }));
 }
 async function getForecastHistory(userId, filters) {

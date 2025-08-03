@@ -44,12 +44,12 @@ export async function upsertForecastConfig(
       userId,
       forecastHorizon,
       confidenceLevel,
-      notificationSettings: JSON.stringify(notificationSettings),
+      notificationSettings,
     },
     update: {
       forecastHorizon,
       confidenceLevel,
-      notificationSettings: JSON.stringify(notificationSettings),
+      notificationSettings,
     },
   });
 

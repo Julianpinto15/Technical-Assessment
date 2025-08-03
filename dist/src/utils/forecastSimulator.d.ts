@@ -14,6 +14,8 @@ interface ForecastOutput {
     seasonalFactor: number;
     trendComponent: number;
 }
-export declare function simulateForecastsWithValidation({ history, horizon, confidenceLevel, }: ForecastInput): ForecastOutput[];
+export declare function simulateForecastsWithValidation({ history, horizon, confidenceLevel, baseDate, }: ForecastInput & {
+    baseDate?: Date;
+}): ForecastOutput[];
 export {};
 //# sourceMappingURL=forecastSimulator.d.ts.map

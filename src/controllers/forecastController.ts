@@ -18,17 +18,12 @@ export const postForecast = async (
   res: Response
 ) => {
   try {
-    const { sku } = req.body;
-
-    // Verificar que el usuario existe
+    const { sku, forecast_period } = req.body;
     if (!req.user) {
       return res.status(401).json({ error: "User not authenticated" });
     }
-
-    // Usar userId en lugar de id
     const userId = req.user.userId;
-
-    const results = await generateForecasts(userId, sku);
+    const results = await generateForecasts(userId, sku, forecast_period);
     res.status(201).json({ message: "Forecasts generated", data: results });
   } catch (err: any) {
     res.status(400).json({ error: err.message });

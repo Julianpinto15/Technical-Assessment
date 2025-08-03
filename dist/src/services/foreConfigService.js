@@ -35,12 +35,12 @@ async function upsertForecastConfig(userId, forecastHorizon, confidenceLevel, al
             userId,
             forecastHorizon,
             confidenceLevel,
-            notificationSettings: JSON.stringify(notificationSettings),
+            notificationSettings,
         },
         update: {
             forecastHorizon,
             confidenceLevel,
-            notificationSettings: JSON.stringify(notificationSettings),
+            notificationSettings,
         },
     });
     // Actualizar o crear el umbral en AlertThreshold sin usar índice con nulls

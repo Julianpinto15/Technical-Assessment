@@ -2,6 +2,19 @@ import prisma from "../prismaClient";
 import { AlertThresholdsInterface } from "../interface/AlertThresholdsInterface";
 import { NotificationsInterface } from "../interface/NotificationsInterface";
 
+// Tipos para mejor tipado
+type ForecastData = {
+  sku: string;
+  data_quality_score: number;
+  base_forecast: number;
+  forecastDate: Date;
+};
+
+type AlertResult = {
+  message: string;
+  forecastDate: string;
+};
+
 // Función helper para validar y convertir notificationSettings
 function parseNotificationSettings(
   jsonValue: unknown
@@ -12,12 +25,30 @@ function parseNotificationSettings(
 
   const obj = jsonValue as Record<string, unknown>;
 
-  // Validar que tiene las propiedades requeridas
   if (typeof obj.email === "boolean" && typeof obj.sms === "boolean") {
-    return obj as unknown as NotificationsInterface;
+    return obj as NotificationsInterface;
   }
 
   return null;
+}
+
+// Validaciones separadas para mejor legibilidad
+function validateMetric(metric: string): void {
+  if (!["precision", "sales"].includes(metric)) {
+    throw new Error("Invalid metric. Must be 'precision' or 'sales'.");
+  }
+}
+
+function validateCondition(condition: string): void {
+  if (!["below", "above"].includes(condition)) {
+    throw new Error("Invalid condition. Must be 'below' or 'above'.");
+  }
+}
+
+function validateThresholds(minThreshold: number, maxThreshold: number): void {
+  if (minThreshold >= maxThreshold) {
+    throw new Error("minThreshold must be less than maxThreshold.");
+  }
 }
 
 // Crear un umbral de alerta
@@ -25,15 +56,9 @@ export async function createAlertThreshold(
   userId: string,
   data: AlertThresholdsInterface
 ) {
-  if (!["precision", "sales"].includes(data.metric)) {
-    throw new Error("Invalid metric. Must be 'precision' or 'sales'.");
-  }
-  if (!["below", "above"].includes(data.condition)) {
-    throw new Error("Invalid condition. Must be 'below' or 'above'.");
-  }
-  if (data.minThreshold >= data.maxThreshold) {
-    throw new Error("minThreshold must be less than maxThreshold.");
-  }
+  validateMetric(data.metric);
+  validateCondition(data.condition);
+  validateThresholds(data.minThreshold, data.maxThreshold);
 
   return prisma.alertThreshold.create({
     data: {
@@ -53,16 +78,164 @@ export async function getAlertThresholds(userId: string) {
   return prisma.alertThreshold.findMany({ where: { userId } });
 }
 
-// Verificar alertas para nuevos pronósticos
-export async function checkAlerts(
+// Funciones de verificación actualizadas para mejor evaluación de umbrales
+function checkPrecisionAlert(
+  forecast: ForecastData,
+  threshold: AlertThresholdsInterface,
+  alertKey: string,
+  seenMessages: Set<string>
+): AlertResult | null {
+  const { data_quality_score, sku, forecastDate } = forecast;
+  const { condition, minThreshold, maxThreshold } = threshold;
+
+  if (seenMessages.has(alertKey)) return null;
+
+  // Evaluación mejorada de condiciones
+  if (condition === "below" && typeof minThreshold === "number") {
+    if (data_quality_score < minThreshold) {
+      seenMessages.add(alertKey);
+      return {
+        message: `Precision too low for SKU ${sku}: ${data_quality_score}`,
+        forecastDate: forecastDate.toISOString(),
+      };
+    }
+  }
+
+  if (condition === "above" && typeof maxThreshold === "number") {
+    if (data_quality_score > maxThreshold) {
+      seenMessages.add(alertKey);
+      return {
+        message: `Precision too high for SKU ${sku}: ${data_quality_score}`,
+        forecastDate: forecastDate.toISOString(),
+      };
+    }
+  }
+
+  return null;
+}
+
+function checkSalesAlert(
+  forecast: ForecastData,
+  threshold: AlertThresholdsInterface,
+  alertKey: string,
+  seenMessages: Set<string>
+): AlertResult | null {
+  const { base_forecast, sku, forecastDate } = forecast;
+  const { condition, minThreshold, maxThreshold } = threshold;
+
+  if (seenMessages.has(alertKey)) return null;
+
+  // Evaluación mejorada de condiciones para sales
+  if (condition === "below" && typeof minThreshold === "number") {
+    if (base_forecast < minThreshold) {
+      seenMessages.add(alertKey);
+      return {
+        message: `Sales forecast too low for SKU ${sku}: ${base_forecast}`,
+        forecastDate: forecastDate.toISOString(),
+      };
+    }
+  }
+
+  if (condition === "above" && typeof maxThreshold === "number") {
+    if (base_forecast > maxThreshold) {
+      seenMessages.add(alertKey);
+      return {
+        message: `Sales forecast too high for SKU ${sku}: ${base_forecast}`,
+        forecastDate: forecastDate.toISOString(),
+      };
+    }
+  }
+
+  return null;
+}
+
+// Tipo para los datos que vienen de Prisma
+type PrismaAlertThreshold = {
+  id: string;
+  sku: string | null;
+  category: string | null;
+  metric: string;
+  minThreshold: number;
+  maxThreshold: number;
+  condition: string;
+  createdAt: Date;
+  updatedAt: Date;
+  userId: string;
+};
+
+// Función para convertir de Prisma a nuestra interfaz
+function convertPrismaThreshold(
+  prismaThreshold: PrismaAlertThreshold
+): AlertThresholdsInterface {
+  return {
+    sku: prismaThreshold.sku ?? undefined,
+    category: prismaThreshold.category ?? undefined,
+    metric: prismaThreshold.metric,
+    minThreshold: prismaThreshold.minThreshold,
+    maxThreshold: prismaThreshold.maxThreshold,
+    condition: prismaThreshold.condition,
+  };
+}
+
+// Función para procesar un solo forecast contra un threshold (ACTUALIZADA)
+function processAlert(
+  forecast: ForecastData,
+  prismaThreshold: PrismaAlertThreshold,
+  seenMessages: Set<string>
+): AlertResult | null {
+  // Convertir threshold de Prisma a nuestra interfaz
+  const threshold = convertPrismaThreshold(prismaThreshold);
+
+  // Clave única más específica que incluye el ID del threshold
+  const alertKey = `${prismaThreshold.id}-${threshold.metric}-${
+    threshold.condition
+  }-${forecast.sku}-${forecast.forecastDate.toISOString()}`;
+
+  switch (threshold.metric) {
+    case "precision":
+      return checkPrecisionAlert(forecast, threshold, alertKey, seenMessages);
+    case "sales":
+      return checkSalesAlert(forecast, threshold, alertKey, seenMessages);
+    default:
+      return null;
+  }
+}
+
+// Función para enviar notificaciones
+async function sendNotifications(
   userId: string,
-  forecasts: {
-    sku: string;
-    data_quality_score: number;
-    base_forecast: number;
-  }[]
-) {
-  const alerts: string[] = [];
+  alerts: AlertResult[]
+): Promise<void> {
+  if (alerts.length === 0) return;
+
+  const config = await prisma.configuration.findUnique({
+    where: { userId },
+    select: { notificationSettings: true },
+  });
+
+  if (!config?.notificationSettings) return;
+
+  const settings = parseNotificationSettings(config.notificationSettings);
+  if (!settings) {
+    console.warn("Invalid notification settings format");
+    return;
+  }
+
+  const messages = alerts.map((alert) => alert.message);
+
+  if (settings.email) {
+    console.log("Sending email notifications:", messages);
+  }
+
+  if (settings.sms) {
+    console.log("Sending SMS notifications:", messages);
+  }
+}
+
+// Verificar alertas para nuevos pronósticos (función principal ACTUALIZADA)
+export async function checkAlerts(userId: string, forecasts: ForecastData[]) {
+  const alerts: AlertResult[] = [];
+  const seenMessages = new Set<string>();
 
   for (const forecast of forecasts) {
     const thresholds = await prisma.alertThreshold.findMany({
@@ -73,70 +246,16 @@ export async function checkAlerts(
     });
 
     for (const threshold of thresholds) {
-      if (threshold.metric === "precision") {
-        if (
-          threshold.condition === "below" &&
-          typeof threshold.minThreshold === "number" &&
-          forecast.data_quality_score < threshold.minThreshold
-        ) {
-          alerts.push(
-            `Precision too low for SKU ${forecast.sku}: ${forecast.data_quality_score}`
-          );
-        } else if (
-          threshold.condition === "above" &&
-          typeof threshold.maxThreshold === "number" &&
-          forecast.data_quality_score > threshold.maxThreshold
-        ) {
-          alerts.push(
-            `Precision too high for SKU ${forecast.sku}: ${forecast.data_quality_score}`
-          );
-        }
-      } else if (threshold.metric === "sales") {
-        if (
-          threshold.condition === "below" &&
-          typeof threshold.minThreshold === "number" &&
-          forecast.base_forecast < threshold.minThreshold
-        ) {
-          alerts.push(
-            `Sales forecast too low for SKU ${forecast.sku}: ${forecast.base_forecast}`
-          );
-        } else if (
-          threshold.condition === "above" &&
-          typeof threshold.maxThreshold === "number" &&
-          forecast.base_forecast > threshold.maxThreshold
-        ) {
-          alerts.push(
-            `Sales forecast too high for SKU ${forecast.sku}: ${forecast.base_forecast}`
-          );
-        }
+      const alertKey = `${threshold.id}-${threshold.metric}-${
+        threshold.condition
+      }-${forecast.sku}-${forecast.forecastDate.toISOString()}`;
+      const alert = processAlert(forecast, threshold, seenMessages);
+      if (alert) {
+        alerts.push(alert);
       }
     }
   }
 
-  // Enviar notificaciones si hay alertas
-  if (alerts.length > 0) {
-    const config = await prisma.configuration.findUnique({
-      where: { userId },
-      select: { notificationSettings: true },
-    });
-
-    if (config?.notificationSettings) {
-      const settings = parseNotificationSettings(config.notificationSettings);
-
-      if (settings) {
-        if (settings.email) {
-          console.log("Sending email notifications:", alerts);
-          // Implementar lógica real de envío de email (ej. nodemailer)
-        }
-        if (settings.sms) {
-          console.log("Sending SMS notifications:", alerts);
-          // Implementar lógica real de SMS (ej. Twilio)
-        }
-      } else {
-        console.warn("Invalid notification settings format");
-      }
-    }
-  }
-
+  await sendNotifications(userId, alerts);
   return alerts;
 }

@@ -1,4 +1,4 @@
-export declare function generateForecasts(userId: string, sku: string): Promise<{
+export declare function generateForecasts(userId: string, sku: string, forecastPeriod?: string): Promise<{
     sku: string;
     forecast_period: string;
     base_forecast: number;

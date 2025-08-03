@@ -4,14 +4,12 @@ exports.getForecastMetricsController = exports.getForecastHistoryController = ex
 const forecastService_1 = require("../services/forecastService");
 const postForecast = async (req, res) => {
     try {
-        const { sku } = req.body;
-        // Verificar que el usuario existe
+        const { sku, forecast_period } = req.body;
         if (!req.user) {
             return res.status(401).json({ error: "User not authenticated" });
         }
-        // Usar userId en lugar de id
         const userId = req.user.userId;
-        const results = await (0, forecastService_1.generateForecasts)(userId, sku);
+        const results = await (0, forecastService_1.generateForecasts)(userId, sku, forecast_period);
         res.status(201).json({ message: "Forecasts generated", data: results });
     }
     catch (err) {

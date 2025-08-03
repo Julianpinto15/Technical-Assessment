@@ -1,1 +1,1 @@
-{"version":3,"file":"NotificationsInterface.d.ts","sourceRoot":"","sources":["../../../src/interface/NotificationsInterface.ts"],"names":[],"mappings":"AAAA,MAAM,WAAW,sBAAsB;IACrC,KAAK,EAAE,OAAO,CAAC;IACf,GAAG,EAAE,OAAO,CAAC;CACd"}
+{"version":3,"file":"NotificationsInterface.d.ts","sourceRoot":"","sources":["../../../src/interface/NotificationsInterface.ts"],"names":[],"mappings":"AAAA,MAAM,WAAW,sBAAsB;IACrC,KAAK,EAAE,OAAO,CAAC;IACf,GAAG,EAAE,OAAO,CAAC;IACb,CAAC,GAAG,EAAE,MAAM,GAAG,GAAG,CAAC;CACpB"}
