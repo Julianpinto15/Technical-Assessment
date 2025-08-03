@@ -23,14 +23,14 @@ class FileProcessingError extends Error {
 class FileUploadService {
     static async processFileUpload(input) {
         try {
-            // Validar entrada
-            this.validateInput(input);
+            // Validar entrada - Cambiar this por FileUploadService
+            FileUploadService.validateInput(input);
             // Parsear archivo
-            const rawData = await this.parseFile(input);
+            const rawData = await FileUploadService.parseFile(input);
             // Validar datos
-            const validatedData = this.validateData(rawData);
+            const validatedData = FileUploadService.validateData(rawData);
             // Procesar en la base de datos
-            const result = await this.saveToDatabase(validatedData, input);
+            const result = await FileUploadService.saveToDatabase(validatedData, input);
             // Notificar progreso completado
             input.onProgress?.(100);
             return result;
@@ -82,11 +82,11 @@ class FileUploadService {
         const uploadedAt = new Date();
         try {
             // Si hay muchos registros, procesar en lotes
-            if (validatedData.length > this.BATCH_SIZE) {
-                return await this.processBatches(validatedData, userId, originalname, uploadedAt, onProgress);
+            if (validatedData.length > FileUploadService.BATCH_SIZE) {
+                return await FileUploadService.processBatches(validatedData, userId, originalname, uploadedAt, onProgress);
             }
             // Procesar todo de una vez si no son muchos registros
-            await this.insertBatch(validatedData, userId, originalname, uploadedAt);
+            await FileUploadService.insertBatch(validatedData, userId, originalname, uploadedAt);
             return {
                 totalProcessed: validatedData.length,
                 fileName: originalname,
@@ -98,13 +98,13 @@ class FileUploadService {
         }
     }
     static async processBatches(data, userId, fileName, uploadedAt, onProgress) {
-        const totalBatches = Math.ceil(data.length / this.BATCH_SIZE);
+        const totalBatches = Math.ceil(data.length / FileUploadService.BATCH_SIZE);
         let processedRows = 0;
         for (let i = 0; i < totalBatches; i++) {
-            const start = i * this.BATCH_SIZE;
-            const end = Math.min(start + this.BATCH_SIZE, data.length);
+            const start = i * FileUploadService.BATCH_SIZE;
+            const end = Math.min(start + FileUploadService.BATCH_SIZE, data.length);
             const batch = data.slice(start, end);
-            await this.insertBatch(batch, userId, fileName, uploadedAt);
+            await FileUploadService.insertBatch(batch, userId, fileName, uploadedAt);
             processedRows += batch.length;
             // Actualizar progreso (reservamos el 100% para el final)
             const progress = Math.min(95, Math.floor((processedRows / data.length) * 100));
