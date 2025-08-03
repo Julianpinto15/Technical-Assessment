@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
-import prisma from "../prismaClient";
-import { authenticate } from "../middlewares/authMiddleware";
+import { upsertForecastConfig } from "../services/foreConfigService";
+import { AlertThresholdsInterface } from "../interface/AlertThresholdsInterface";
+import { NotificationsInterface } from "../interface/NotificationsInterface";
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -26,16 +27,14 @@ export async function setForecastConfig(
     notificationSettings,
   } = req.body;
 
-  // Validar datos de entrada Validar forecastHorizon
+  // Validar forecastHorizon
   if (
     !Array.isArray(forecastHorizon) ||
     forecastHorizon.some((h: number) => !Number.isInteger(h) || h < 1 || h > 6)
   ) {
-    return res
-      .status(400)
-      .json({
-        error: "Horizontes de pronóstico deben ser enteros entre 1 y 6",
-      });
+    return res.status(400).json({
+      error: "Horizontes de pronóstico deben ser enteros entre 1 y 6",
+    });
   }
 
   // Validar y convertir confidenceLevels
@@ -53,28 +52,38 @@ export async function setForecastConfig(
     (c: number) => c / 100
   );
 
-  // Validar alertThresholds y notificationSettings (simplificado)
+  // Validar alertThresholds
   if (
-    !alertThresholds ||
-    typeof alertThresholds !== "object" ||
-    !notificationSettings ||
-    typeof notificationSettings !== "object"
+    alertThresholds &&
+    (typeof alertThresholds.minThreshold !== "number" ||
+      typeof alertThresholds.maxThreshold !== "number" ||
+      alertThresholds.minThreshold >= alertThresholds.maxThreshold)
   ) {
     return res.status(400).json({
-      error: "alertThresholds y notificationSettings deben ser objetos",
+      error: "alertThresholds debe tener minThreshold < maxThreshold",
+    });
+  }
+
+  // Validar notificationSettings
+  if (
+    !notificationSettings ||
+    typeof notificationSettings.email !== "boolean" ||
+    typeof notificationSettings.sms !== "boolean"
+  ) {
+    return res.status(400).json({
+      error:
+        "notificationSettings debe tener propiedades email y sms de tipo boolean",
     });
   }
 
   try {
-    const config = await prisma.configuration.create({
-      data: {
-        userId: req.user.userId,
-        forecastHorizon,
-        confidenceLevel: normalizedConfidenceLevels, // Guardar en formato decimal
-        alertThresholds,
-        notificationSettings,
-      },
-    });
+    const config = await upsertForecastConfig(
+      userId,
+      forecastHorizon,
+      normalizedConfidenceLevels,
+      alertThresholds as AlertThresholdsInterface,
+      notificationSettings as NotificationsInterface
+    );
     res.json(config);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
