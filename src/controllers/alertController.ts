@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import * as alertService from "../services/alertService";
+import prisma from "../prismaClient"; // Adjust the path if your Prisma client is elsewhere
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -41,5 +42,25 @@ export async function getAlertThresholds(
     res.json(thresholds);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
+  }
+}
+
+export async function getRecentAlerts(
+  req: AuthenticatedRequest,
+  res: Response
+) {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) throw new Error("User not authenticated");
+
+    const alerts = await prisma.alert.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+
+    res.json(alerts);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 }

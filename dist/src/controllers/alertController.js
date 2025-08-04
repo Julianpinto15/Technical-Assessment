@@ -32,10 +32,15 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createAlertThreshold = createAlertThreshold;
 exports.getAlertThresholds = getAlertThresholds;
+exports.getRecentAlerts = getRecentAlerts;
 const alertService = __importStar(require("../services/alertService"));
+const prismaClient_1 = __importDefault(require("../prismaClient")); // Adjust the path if your Prisma client is elsewhere
 async function createAlertThreshold(req, res) {
     try {
         const userId = req.user?.userId; // Asumiendo que authMiddleware agrega user al request
@@ -62,6 +67,22 @@ async function getAlertThresholds(req, res) {
     }
     catch (error) {
         res.status(400).json({ error: error.message });
+    }
+}
+async function getRecentAlerts(req, res) {
+    try {
+        const userId = req.user?.userId;
+        if (!userId)
+            throw new Error("User not authenticated");
+        const alerts = await prismaClient_1.default.alert.findMany({
+            where: { userId },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+        });
+        res.json(alerts);
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
     }
 }
 //# sourceMappingURL=alertController.js.map

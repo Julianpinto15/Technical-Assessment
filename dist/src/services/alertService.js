@@ -176,6 +176,15 @@ async function checkAlerts(userId, forecasts) {
             }
         }
     }
+    await prismaClient_1.default.alert.createMany({
+        data: alerts.map((alert) => ({
+            userId,
+            sku: alert.message.match(/SKU (\w+)/)?.[1] || "UNKNOWN",
+            message: alert.message,
+            forecastDate: new Date(alert.forecastDate),
+        })),
+        skipDuplicates: true,
+    });
     await sendNotifications(userId, alerts);
     return alerts;
 }

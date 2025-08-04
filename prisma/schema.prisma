@@ -26,6 +26,7 @@ model User {
   forecasts   Forecast[]
   configurations Configuration?
   alertThresholds AlertThreshold[]
+  alerts           Alert[] 
 }
 
 model SalesData {
@@ -58,6 +59,7 @@ model Forecast {
   trendComponent  Float
   generatedAt     DateTime @default(now())
   modelVersion    String
+  
   @@index([userId, sku, forecastDate])
 }
 
@@ -84,4 +86,16 @@ model AlertThreshold {
   updatedAt   DateTime @updatedAt
   @@index([userId, sku, category])
   @@unique([userId, metric, sku, category], name: "AlertThreshold_userId_metric_sku_category_unique")
+}
+
+model Alert {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  sku          String
+  message      String
+  forecastDate DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId, sku, forecastDate])
 }
