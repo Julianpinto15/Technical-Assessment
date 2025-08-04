@@ -271,3 +271,18 @@ export async function checkAlerts(userId: string, forecasts: ForecastData[]) {
   await sendNotifications(userId, alerts);
   return alerts;
 }
+
+// ✅ NUEVA FUNCIÓN: Crear alerta directa (por error u otra causa)
+export async function createAlert(
+  userId: string,
+  message: string
+): Promise<void> {
+  await prisma.alert.create({
+    data: {
+      userId,
+      sku: "GENERAL",
+      message,
+      forecastDate: new Date(), // Puedes omitir si tu modelo lo permite
+    },
+  });
+}

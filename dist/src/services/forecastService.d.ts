@@ -10,8 +10,14 @@ export declare function generateForecasts(userId: string, sku: string, forecastP
     generated_at: string;
     model_version: string;
     data_quality_score: number;
+    data_source: string;
     alerts: string[];
 }[]>;
+export declare function getAvailableSkus(userId: string): Promise<{
+    historical: string[];
+    forecasted: string[];
+    canSimulate: string;
+}>;
 export declare function getForecastHistory(userId: string, filters: {
     sku?: string;
     startDate?: string;

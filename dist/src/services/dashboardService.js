@@ -3,23 +3,30 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getNotifications = exports.getTrendsData = exports.getDashboardSummary = void 0;
-const prismaClient_1 = __importDefault(require("../prismaClient"));
+exports.getDashboardStats = exports.getNotifications = exports.getTrendsData = exports.getDashboardSummary = void 0;
 const date_fns_1 = require("date-fns");
-// ✅ Métricas generales del dashboard
-const getDashboardSummary = async (userId) => {
+const prismaClient_1 = __importDefault(require("../prismaClient"));
+const date_fns_2 = require("date-fns");
+const getDashboardSummary = async (userId, startDateParam, endDateParam) => {
     const now = new Date();
-    const startOfCurrentMonth = (0, date_fns_1.startOfMonth)(now);
-    const endOfCurrentMonth = (0, date_fns_1.endOfMonth)(now);
-    const startOfLastMonth = (0, date_fns_1.startOfMonth)((0, date_fns_1.subMonths)(now, 1));
-    const endOfLastMonth = (0, date_fns_1.endOfMonth)((0, date_fns_1.subMonths)(now, 1));
-    // Métricas del mes actual
-    const currentMonthData = await prismaClient_1.default.salesData.findMany({
+    // ✅ Si se pasan fechas, las usa
+    let startDate = startDateParam ? (0, date_fns_1.parseISO)(startDateParam) : (0, date_fns_2.startOfMonth)(now);
+    let endDate = endDateParam ? (0, date_fns_1.parseISO)(endDateParam) : (0, date_fns_2.endOfMonth)(now);
+    // ✅ Validar que las fechas sean válidas
+    if (!(0, date_fns_2.isValid)(startDate))
+        startDate = (0, date_fns_2.startOfMonth)(now);
+    if (!(0, date_fns_2.isValid)(endDate))
+        endDate = (0, date_fns_2.endOfMonth)(now);
+    // ✅ Rango para el mes anterior (para comparar)
+    const startOfLastMonth = (0, date_fns_2.subMonths)(startDate, 1);
+    const endOfLastMonth = (0, date_fns_2.subMonths)(endDate, 1);
+    // Datos del rango actual
+    const currentData = await prismaClient_1.default.salesData.findMany({
         where: {
-            userId: userId, // ✅ Filtrar por usuario
+            userId,
             date: {
-                gte: startOfCurrentMonth,
-                lte: endOfCurrentMonth,
+                gte: startDate,
+                lte: endDate,
             },
         },
         select: {
@@ -27,10 +34,10 @@ const getDashboardSummary = async (userId) => {
             price: true,
         },
     });
-    // Métricas del mes anterior
-    const lastMonthData = await prismaClient_1.default.salesData.findMany({
+    // Datos del rango anterior
+    const lastData = await prismaClient_1.default.salesData.findMany({
         where: {
-            userId: userId, // ✅ Filtrar por usuario
+            userId,
             date: {
                 gte: startOfLastMonth,
                 lte: endOfLastMonth,
@@ -41,32 +48,30 @@ const getDashboardSummary = async (userId) => {
             price: true,
         },
     });
-    // Calcular totales
-    const currentSales = currentMonthData.reduce((acc, row) => acc + row.quantity, 0);
-    const currentRevenue = currentMonthData.reduce((acc, row) => acc + row.quantity * row.price, 0);
-    const lastSales = lastMonthData.reduce((acc, row) => acc + row.quantity, 0);
-    const lastRevenue = lastMonthData.reduce((acc, row) => acc + row.quantity * row.price, 0);
-    // Calcular porcentajes de cambio
+    const currentSales = currentData.reduce((acc, row) => acc + row.quantity, 0);
+    const currentRevenue = currentData.reduce((acc, row) => acc + row.quantity * row.price, 0);
+    const lastSales = lastData.reduce((acc, row) => acc + row.quantity, 0);
+    const lastRevenue = lastData.reduce((acc, row) => acc + row.quantity * row.price, 0);
     const salesChange = lastSales > 0 ? ((currentSales - lastSales) / lastSales) * 100 : 0;
     const revenueChange = lastRevenue > 0 ? ((currentRevenue - lastRevenue) / lastRevenue) * 100 : 0;
     // Contar productos únicos y categorías
     const uniqueProducts = await prismaClient_1.default.salesData.groupBy({
         by: ["sku"],
         where: {
-            userId: userId, // ✅ Filtrar por usuario
+            userId,
             date: {
-                gte: startOfCurrentMonth,
-                lte: endOfCurrentMonth,
+                gte: startDate,
+                lte: endDate,
             },
         },
     });
     const uniqueCategories = await prismaClient_1.default.salesData.groupBy({
         by: ["category"],
         where: {
-            userId: userId, // ✅ Filtrar por usuario
+            userId,
             date: {
-                gte: startOfCurrentMonth,
-                lte: endOfCurrentMonth,
+                gte: startDate,
+                lte: endDate,
             },
         },
     });
@@ -75,29 +80,32 @@ const getDashboardSummary = async (userId) => {
         totalRevenue: Math.round(currentRevenue),
         totalProducts: uniqueProducts.length,
         totalCategories: uniqueCategories.length,
-        salesChange: Math.round(salesChange * 100) / 100, // 2 decimales
+        salesChange: Math.round(salesChange * 100) / 100,
         revenueChange: Math.round(revenueChange * 100) / 100,
     };
 };
 exports.getDashboardSummary = getDashboardSummary;
 // ✅ Datos de tendencias por los últimos 12 meses
-const getTrendsData = async (userId) => {
+const getTrendsData = async (userId, startDateParam, endDateParam) => {
     const now = new Date();
-    const months = [];
-    // Construir rango de los últimos 12 meses
-    for (let i = 11; i >= 0; i--) {
-        const date = (0, date_fns_1.subMonths)(now, i);
-        const start = (0, date_fns_1.startOfMonth)(date);
-        const end = (0, date_fns_1.endOfMonth)(date);
-        const label = start.toLocaleString("es-CO", { month: "short" });
-        months.push({ start, end, label });
-    }
-    // Obtener datos por cada mes
+    const startDate = startDateParam && (0, date_fns_2.isValid)((0, date_fns_1.parseISO)(startDateParam))
+        ? (0, date_fns_1.parseISO)(startDateParam)
+        : (0, date_fns_2.addMonths)(now, -11); // hace 11 meses
+    const endDate = endDateParam && (0, date_fns_2.isValid)((0, date_fns_1.parseISO)(endDateParam))
+        ? (0, date_fns_1.parseISO)(endDateParam)
+        : now;
+    // Generar meses intermedios
+    const months = (0, date_fns_2.eachMonthOfInterval)({ start: startDate, end: endDate }).map((date) => {
+        return {
+            start: new Date(date.getFullYear(), date.getMonth(), 1),
+            end: new Date(date.getFullYear(), date.getMonth() + 1, 0),
+            label: (0, date_fns_2.format)(date, "MMM", { locale: undefined }),
+        };
+    });
     const salesData = await Promise.all(months.map(async ({ start, end, label }) => {
-        // ✅ Filtrar por usuario
         const rows = await prismaClient_1.default.salesData.findMany({
             where: {
-                userId: userId, // ✅ Filtrar por usuario específico
+                userId,
                 date: {
                     gte: start,
                     lte: end,
@@ -108,9 +116,8 @@ const getTrendsData = async (userId) => {
                 price: true,
             },
         });
-        // Sumar ventas e ingresos manualmente
-        const totalSales = rows.reduce((acc, row) => acc + row.quantity, 0);
-        const totalRevenue = rows.reduce((acc, row) => acc + row.quantity * row.price, 0);
+        const totalSales = rows.reduce((acc, r) => acc + r.quantity, 0);
+        const totalRevenue = rows.reduce((acc, r) => acc + r.quantity * r.price, 0);
         return {
             month: label,
             totalSales,
@@ -168,4 +175,32 @@ const getNotifications = async (userId) => {
     }
 };
 exports.getNotifications = getNotifications;
+const getDashboardStats = async (userId) => {
+    // Total usuarios
+    const userCount = await prismaClient_1.default.user.count();
+    // Total pronósticos del usuario
+    const forecastCount = await prismaClient_1.default.forecast.count({
+        where: { userId },
+    });
+    // Total alertas del usuario
+    const alertCount = await prismaClient_1.default.alert.count({
+        where: { userId },
+    });
+    // Precisión promedio del usuario
+    const precisions = await prismaClient_1.default.forecast.findMany({
+        where: { userId },
+        select: { confidenceLevel: true },
+    });
+    const avgPrecision = precisions.length > 0
+        ? precisions.reduce((acc, f) => acc + f.confidenceLevel, 0) /
+            precisions.length
+        : 0;
+    return {
+        userCount,
+        forecastCount,
+        alertCount,
+        avgPrecision: parseFloat(avgPrecision.toFixed(2)),
+    };
+};
+exports.getDashboardStats = getDashboardStats;
 //# sourceMappingURL=dashboardService.js.map

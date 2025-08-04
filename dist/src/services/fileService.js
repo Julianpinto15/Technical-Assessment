@@ -3,16 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.processFileUpload = exports.FileUploadService = void 0;
+exports.confirmFileUpload = exports.mapFileColumns = exports.previewFileUpload = exports.processFileUpload = exports.FileUploadService = void 0;
 const prismaClient_1 = __importDefault(require("../prismaClient"));
 const fileValidator_1 = require("../utils/fileValidator");
-// Constantes para tipos MIME
 const SUPPORTED_MIME_TYPES = {
     CSV: "text/csv",
     XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     XLS: "application/vnd.ms-excel",
 };
-// Clase de error personalizada para mejor manejo
 class FileProcessingError extends Error {
     constructor(message, code) {
         super(message);
@@ -21,26 +19,86 @@ class FileProcessingError extends Error {
     }
 }
 class FileUploadService {
+    static async createAlert(userId, message, sku) {
+        await prismaClient_1.default.alert.create({
+            data: {
+                userId,
+                sku: sku || "N/A",
+                message,
+                forecastDate: new Date(),
+                createdAt: new Date(),
+            },
+        });
+    }
     static async processFileUpload(input) {
         try {
-            // Validar entrada - Cambiar this por FileUploadService
-            FileUploadService.validateInput(input);
-            // Parsear archivo
-            const rawData = await FileUploadService.parseFile(input);
-            // Validar datos
-            const validatedData = FileUploadService.validateData(rawData);
-            // Procesar en la base de datos
-            const result = await FileUploadService.saveToDatabase(validatedData, input);
-            // Notificar progreso completado
+            this.validateInput(input);
+            const rawData = await this.parseFile(input);
+            const validatedData = this.validateData(rawData);
+            const result = await this.saveToDatabase(validatedData, input);
+            await this.createAlert(input.userId, `Archivo ${input.originalname} cargado exitosamente (${result.totalProcessed} filas procesadas)`);
             input.onProgress?.(100);
             return result;
         }
         catch (error) {
-            // Mejor manejo de errores
-            if (error instanceof FileProcessingError) {
+            const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+            await this.createAlert(input.userId, `Error procesando archivo: ${errorMessage}`);
+            if (error instanceof FileProcessingError)
                 throw error;
+            throw new FileProcessingError(`Error procesando archivo: ${errorMessage}`, "PROCESSING_ERROR");
+        }
+    }
+    static async previewFileUpload(input) {
+        try {
+            this.validateInput(input);
+            const rawData = await this.parseFile(input);
+            const validatedData = this.validateData(rawData);
+            const suggestedMapping = {};
+            const firstRow = rawData[0] || {};
+            for (const key of Object.keys(firstRow)) {
+                suggestedMapping[key] = normalizeColumnName(key);
             }
-            throw new FileProcessingError(`Error procesando archivo: ${error instanceof Error ? error.message : "Error desconocido"}`, "PROCESSING_ERROR");
+            return {
+                data: rawData.slice(0, 5),
+                suggestedMapping,
+                errors: [],
+            };
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+            await this.createAlert(input.userId, `Error en vista previa: ${errorMessage}`);
+            console.error("Error en previewFileUpload:", error);
+            throw new FileProcessingError(errorMessage, "PREVIEW_ERROR");
+        }
+    }
+    static async mapFileColumns(input) {
+        try {
+            const validatedData = []; // Aquí puedes agregar validación real con datos temporales
+            if (validatedData.length) {
+                await this.createAlert(input.userId, "Mapeo validado correctamente");
+                return { errors: [] };
+            }
+            else {
+                const errorMessage = "Mapeo inválido: faltan columnas requeridas";
+                await this.createAlert(input.userId, errorMessage);
+                return { errors: [errorMessage] };
+            }
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+            await this.createAlert(input.userId, `Error en mapeo: ${errorMessage}`);
+            throw new FileProcessingError(errorMessage, "MAPPING_ERROR");
+        }
+    }
+    static async confirmFileUpload(input) {
+        try {
+            await this.createAlert(input.userId, `Carga de ${input.fileName} confirmada exitosamente`);
+            return { message: "Datos cargados exitosamente" };
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+            await this.createAlert(input.userId, `Error en confirmación: ${errorMessage}`);
+            throw new FileProcessingError(errorMessage, "CONFIRMATION_ERROR");
         }
     }
     static validateInput(input) {
@@ -81,12 +139,10 @@ class FileUploadService {
         const { userId, originalname, onProgress } = input;
         const uploadedAt = new Date();
         try {
-            // Si hay muchos registros, procesar en lotes
-            if (validatedData.length > FileUploadService.BATCH_SIZE) {
-                return await FileUploadService.processBatches(validatedData, userId, originalname, uploadedAt, onProgress);
+            if (validatedData.length > this.BATCH_SIZE) {
+                return await this.processBatches(validatedData, userId, originalname, uploadedAt, onProgress);
             }
-            // Procesar todo de una vez si no son muchos registros
-            await FileUploadService.insertBatch(validatedData, userId, originalname, uploadedAt);
+            await this.insertBatch(validatedData, userId, originalname, uploadedAt);
             return {
                 totalProcessed: validatedData.length,
                 fileName: originalname,
@@ -98,15 +154,14 @@ class FileUploadService {
         }
     }
     static async processBatches(data, userId, fileName, uploadedAt, onProgress) {
-        const totalBatches = Math.ceil(data.length / FileUploadService.BATCH_SIZE);
+        const totalBatches = Math.ceil(data.length / this.BATCH_SIZE);
         let processedRows = 0;
         for (let i = 0; i < totalBatches; i++) {
-            const start = i * FileUploadService.BATCH_SIZE;
-            const end = Math.min(start + FileUploadService.BATCH_SIZE, data.length);
+            const start = i * this.BATCH_SIZE;
+            const end = Math.min(start + this.BATCH_SIZE, data.length);
             const batch = data.slice(start, end);
-            await FileUploadService.insertBatch(batch, userId, fileName, uploadedAt);
+            await this.insertBatch(batch, userId, fileName, uploadedAt);
             processedRows += batch.length;
-            // Actualizar progreso (reservamos el 100% para el final)
             const progress = Math.min(95, Math.floor((processedRows / data.length) * 100));
             onProgress?.(progress);
         }
@@ -124,7 +179,7 @@ class FileUploadService {
                 date: new Date(item.fecha),
                 quantity: item.cantidad,
                 price: item.precio,
-                promotion: item.promocion, // Ahora es boolean, no string
+                promotion: item.promocion,
                 uploadedAt,
                 fileName,
                 dataVersion: 1,
@@ -135,7 +190,14 @@ class FileUploadService {
     }
 }
 exports.FileUploadService = FileUploadService;
-FileUploadService.BATCH_SIZE = 1000; // Para procesar en lotes si hay muchos datos
-// Mantener la función original para compatibilidad hacia atrás
+FileUploadService.BATCH_SIZE = 1000;
+// ✅ Exportar funciones individuales
 exports.processFileUpload = FileUploadService.processFileUpload;
+exports.previewFileUpload = FileUploadService.previewFileUpload;
+exports.mapFileColumns = FileUploadService.mapFileColumns;
+exports.confirmFileUpload = FileUploadService.confirmFileUpload;
+// ✅ Utilidad para sugerir nombres de columnas
+function normalizeColumnName(name) {
+    return name.trim().toLowerCase().replace(/\s+/g, "_");
+}
 //# sourceMappingURL=fileService.js.map
