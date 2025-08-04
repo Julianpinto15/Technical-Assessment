@@ -74,7 +74,7 @@ npx prisma generate
 npx prisma migrate deploy
 
 # (Opcional) Seed de datos iniciales
-npx prisma db seed
+npx prisma db push
 ```
 
 ### 6. Iniciar el servidor
