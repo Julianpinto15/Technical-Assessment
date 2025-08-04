@@ -57,11 +57,12 @@ npm install
 Crear un archivo `.env` en la raíz del proyecto:
 
 ```env
-DATABASE_URL="postgresql://username:password@localhost:5432/technical_assessment"
-JWT_SECRET="tu_jwt_secret_key"
-JWT_REFRESH_SECRET="tu_jwt_refresh_secret_key"
+DATABASE_URL="postgresql://postgres:root@localhost:5432/forecast_app?schema=public"
+JWT_ACCESS_SECRET=74e1a6b5caa4d3c13c0e4e91a3b9d0ea0f5b3a0286a82fcb5c3d13f5f8d0aa9c979e8ac541bd3f4a26078c7d4c2bc2d38438e2dc39df7dd75b4c50d3c9d7e5e0
+JWT_REFRESH_SECRET=0f257e46cce5b8be9258f1a2441d0cf31a59ea31cf97d3c63a69067162f64b421db1548932482a91f14671f14a36fdbbc11b3aa4d07ffcad0a12c548eea2dcd2
 PORT=3000
 ```
+⚠️ Nota de Seguridad: En un entorno de producción, asegúrate de cambiar los secrets JWT por valores únicos y seguros.
 
 ### 4. Ejecutar migraciones de Prisma
 
