@@ -90,12 +90,14 @@ function checkPrecisionAlert(
 
   if (seenMessages.has(alertKey)) return null;
 
-  // Evaluación mejorada de condiciones
-  if (condition === "below" && typeof minThreshold === "number") {
-    if (data_quality_score < minThreshold) {
+  // Normalizar data_quality_score si los umbrales están en una escala diferente
+  // Suponemos que los umbrales están en la escala 0-1, no 0-150
+  const normalizedScore = data_quality_score * 150; // Escala de 0-1 a 0-150
+  if (condition === "above" && typeof maxThreshold === "number") {
+    if (normalizedScore > maxThreshold) {
       seenMessages.add(alertKey);
       return {
-        message: `Precision too low for SKU ${sku}: ${data_quality_score}`,
+        message: `Precision too high for SKU ${sku}: ${data_quality_score}`,
         forecastDate: forecastDate.toISOString(),
       };
     }

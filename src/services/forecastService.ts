@@ -2,22 +2,91 @@ import prisma from "../prismaClient";
 import { simulateForecastsWithValidation } from "../utils/forecastSimulator";
 import { checkAlerts } from "./alertService";
 
+// Función para generar datos históricos simulados
+function generateSimulatedHistory(sku: string, months: number = 12) {
+  const history = [];
+
+  // Generar patrones realistas basados en el SKU
+  const skuHash = sku.split("").reduce((a, b) => {
+    a = (a << 5) - a + b.charCodeAt(0);
+    return a & a;
+  }, 0);
+
+  const baseValue = 10 + Math.abs(skuHash % 90); // Base entre 10-100
+  const seasonalAmplitude = 0.2 + Math.abs(skuHash % 100) / 500; // 0.2-0.4
+  const trendRate = -0.02 + Math.abs(skuHash % 100) / 2500; // -0.02 a 0.02
+
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - months);
+
+  for (let i = 0; i < months; i++) {
+    const date = new Date(startDate);
+    date.setMonth(date.getMonth() + i);
+
+    // Componente estacional (ciclo anual)
+    const seasonalFactor =
+      1 + seasonalAmplitude * Math.sin((i / 12) * 2 * Math.PI);
+
+    // Componente de tendencia
+    const trendFactor = 1 + trendRate * i;
+
+    // Ruido aleatorio (±15%)
+    const noiseFactor = 0.85 + Math.random() * 0.3;
+
+    // Variación semanal (algunos productos venden más en ciertos días)
+    const weeklyFactor = 0.9 + Math.abs(skuHash % 7) / 35;
+
+    const quantity = Math.max(
+      1,
+      Math.round(
+        baseValue * seasonalFactor * trendFactor * noiseFactor * weeklyFactor
+      )
+    );
+
+    history.push({
+      date,
+      quantity,
+    });
+  }
+
+  console.log(`Generated ${months} months of simulated data for SKU ${sku}`);
+  console.log(
+    `Base value: ${baseValue}, Seasonal amplitude: ${seasonalAmplitude.toFixed(
+      3
+    )}, Trend: ${trendRate.toFixed(4)}`
+  );
+
+  return history;
+}
+
 export async function generateForecasts(
   userId: string,
   sku: string,
   forecastPeriod?: string
 ) {
+  // Verificar configuración
   const config = await prisma.configuration.findUnique({ where: { userId } });
   if (!config) throw new Error("No forecast configuration found for user");
 
-  const history = await prisma.salesData.findMany({
+  // Intentar obtener datos históricos reales
+  let history = await prisma.salesData.findMany({
     where: { userId, sku },
     orderBy: { date: "asc" },
     select: { date: true, quantity: true },
   });
 
-  if (history.length < 2)
-    throw new Error("Not enough historical data to forecast");
+  let dataSource = "historical";
+
+  // Si no hay suficientes datos históricos, generar datos simulados
+  if (history.length < 2) {
+    console.log(
+      `SKU ${sku}: Insufficient historical data (${history.length} records). Generating simulated data...`
+    );
+    history = generateSimulatedHistory(sku, 18); // 18 meses para mejor precisión
+    dataSource = "simulated";
+  } else {
+    console.log(`SKU ${sku}: Using ${history.length} historical records`);
+  }
 
   const horizon = Math.max(...config.forecastHorizon);
   const confidenceLevel = Math.max(...config.confidenceLevel);
@@ -39,10 +108,10 @@ export async function generateForecasts(
     baseDate,
   });
 
-  const modelVersion = "v1.0";
+  const modelVersion = dataSource === "simulated" ? "v1.0-sim" : "v1.0";
   const generatedAt = new Date();
 
-  // NUEVA LÓGICA: Verificar pronósticos existentes para evitar duplicados
+  // Verificar pronósticos existentes para evitar duplicados
   const existingForecasts = await prisma.forecast.findMany({
     where: {
       userId,
@@ -82,27 +151,47 @@ export async function generateForecasts(
 
   // Calcular data_quality_score dinámicamente
   let dataQualityScore = 0.87;
-  const sales = await prisma.salesData.findMany({
-    where: { userId, sku },
-    select: { date: true, quantity: true },
-  });
 
-  let totalError = 0;
-  let matchedCount = 0;
+  if (dataSource === "simulated") {
+    // Para datos simulados, calcular calidad basada en consistencia del patrón
+    const values = history.map((h) => h.quantity);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance =
+      values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    const coefficientOfVariation = Math.sqrt(variance) / mean;
 
-  for (const sim of simulated) {
-    const sale = sales.find(
-      (s) => s.date.toISOString() === sim.forecastDate.toISOString()
+    // Calidad inversa a la variabilidad (más consistente = mejor calidad)
+    dataQualityScore = Math.max(
+      0.6,
+      Math.min(0.95, 1 - coefficientOfVariation)
     );
-    if (sale) {
-      const error = Math.abs(sim.baseValue - sale.quantity) / sale.quantity;
-      totalError += error;
-      matchedCount++;
-    }
-  }
+  } else {
+    // Para datos históricos, calcular precisión comparando con ventas reales
+    const sales = await prisma.salesData.findMany({
+      where: { userId, sku },
+      select: { date: true, quantity: true },
+    });
 
-  if (matchedCount > 0) {
-    dataQualityScore = Math.max(0, Math.min(1, 1 - totalError / matchedCount));
+    let totalError = 0;
+    let matchedCount = 0;
+
+    for (const sim of simulated) {
+      const sale = sales.find(
+        (s) => s.date.toISOString() === sim.forecastDate.toISOString()
+      );
+      if (sale) {
+        const error = Math.abs(sim.baseValue - sale.quantity) / sale.quantity;
+        totalError += error;
+        matchedCount++;
+      }
+    }
+
+    if (matchedCount > 0) {
+      dataQualityScore = Math.max(
+        0,
+        Math.min(1, 1 - totalError / matchedCount)
+      );
+    }
   }
 
   // Generar alertas para todos los pronósticos simulados
@@ -112,14 +201,16 @@ export async function generateForecasts(
       sku,
       data_quality_score: dataQualityScore,
       base_forecast: item.baseValue,
-      forecastDate: item.forecastDate, // CORRECCIÓN: Agregar forecastDate que faltaba
+      forecastDate: item.forecastDate,
     }))
   );
 
-  // Depuración para verificar alertas
-  console.log("Generated alerts:", alerts);
+  console.log(
+    `Generated ${simulated.length} forecasts for SKU ${sku} using ${dataSource} data`
+  );
+  console.log(`Data quality score: ${dataQualityScore.toFixed(3)}`);
 
-  // Retornar todos los pronósticos simulados (nuevos y existentes)
+  // Retornar todos los pronósticos simulados con información sobre el origen de datos
   return simulated.map((item) => ({
     sku,
     forecast_period: item.forecastDate.toISOString(),
@@ -132,12 +223,35 @@ export async function generateForecasts(
     generated_at: generatedAt.toISOString(),
     model_version: modelVersion,
     data_quality_score: dataQualityScore,
+    data_source: dataSource, // Información adicional para debugging
     alerts: alerts
       .filter((alert) => alert.forecastDate === item.forecastDate.toISOString())
       .map((alert) => alert.message),
   }));
 }
 
+// Función auxiliar para obtener SKUs disponibles (útil para testing)
+export async function getAvailableSkus(userId: string) {
+  const historicalSkus = await prisma.salesData.findMany({
+    where: { userId },
+    select: { sku: true },
+    distinct: ["sku"],
+  });
+
+  const forecastSkus = await prisma.forecast.findMany({
+    where: { userId },
+    select: { sku: true },
+    distinct: ["sku"],
+  });
+
+  return {
+    historical: historicalSkus.map((s) => s.sku),
+    forecasted: forecastSkus.map((s) => s.sku),
+    canSimulate: "ANY_SKU", // Indica que cualquier SKU se puede simular
+  };
+}
+
+// El resto de las funciones permanecen igual...
 export async function getForecastHistory(
   userId: string,
   filters: {
@@ -168,7 +282,6 @@ export async function getForecastHistory(
   }
 
   if (category) {
-    // Obtener SKUs de SalesData que coincidan con la categoría
     const skus = await prisma.salesData
       .findMany({
         where: { userId, category },
@@ -202,7 +315,6 @@ export async function getForecastHistory(
       },
     });
 
-    // Obtener categorías asociadas a los SKUs
     const skuCategories = await prisma.salesData.findMany({
       where: { userId, sku: { in: skus } },
       select: { sku: true, category: true },
@@ -224,7 +336,7 @@ export async function getForecastHistory(
       trend_component: f.trendComponent,
       generated_at: f.generatedAt.toISOString(),
       model_version: f.modelVersion,
-      category: categoryMap.get(f.sku) || category, // Usar la categoría del filtro o de SalesData
+      category: categoryMap.get(f.sku) || category,
     }));
   }
 
@@ -279,13 +391,11 @@ export async function getForecastMetrics(userId: string, sku?: string) {
     select: { sku: true, quantity: true, date: true, category: true },
   });
 
-  // Calcular métricas
   const totalForecasts = forecasts.length;
   const avgForecast = forecasts.length
     ? forecasts.reduce((sum, f) => sum + f.baseValue, 0) / forecasts.length
     : 0;
 
-  // Calcular precisión (error porcentual entre baseValue y quantity)
   let totalError = 0;
   let matchedCount = 0;
   for (const forecast of forecasts) {
@@ -301,7 +411,6 @@ export async function getForecastMetrics(userId: string, sku?: string) {
   }
   const avgPrecision = matchedCount ? 1 - totalError / matchedCount : 0;
 
-  // Agregaciones por categoría
   const categoryMetrics = await prisma.salesData.groupBy({
     by: ["category"],
     where: { userId },

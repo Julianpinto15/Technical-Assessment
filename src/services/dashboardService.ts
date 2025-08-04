@@ -1,6 +1,14 @@
 import { parseISO } from "date-fns";
 import prisma from "../prismaClient";
-import { startOfMonth, endOfMonth, subMonths, isValid } from "date-fns";
+import {
+  startOfMonth,
+  endOfMonth,
+  eachMonthOfInterval,
+  format,
+  subMonths,
+  isValid,
+  addMonths,
+} from "date-fns";
 
 export const getDashboardSummary = async (
   userId: string,
@@ -102,26 +110,39 @@ export const getDashboardSummary = async (
 };
 
 // ✅ Datos de tendencias por los últimos 12 meses
-export const getTrendsData = async (userId: string) => {
+export const getTrendsData = async (
+  userId: string,
+  startDateParam?: string,
+  endDateParam?: string
+) => {
   const now = new Date();
-  const months: { start: Date; end: Date; label: string }[] = [];
 
-  // Construir rango de los últimos 12 meses
-  for (let i = 11; i >= 0; i--) {
-    const date = subMonths(now, i);
-    const start = startOfMonth(date);
-    const end = endOfMonth(date);
-    const label = start.toLocaleString("es-CO", { month: "short" });
-    months.push({ start, end, label });
-  }
+  const startDate =
+    startDateParam && isValid(parseISO(startDateParam))
+      ? parseISO(startDateParam)
+      : addMonths(now, -11); // hace 11 meses
 
-  // Obtener datos por cada mes
+  const endDate =
+    endDateParam && isValid(parseISO(endDateParam))
+      ? parseISO(endDateParam)
+      : now;
+
+  // Generar meses intermedios
+  const months = eachMonthOfInterval({ start: startDate, end: endDate }).map(
+    (date) => {
+      return {
+        start: new Date(date.getFullYear(), date.getMonth(), 1),
+        end: new Date(date.getFullYear(), date.getMonth() + 1, 0),
+        label: format(date, "MMM", { locale: undefined }),
+      };
+    }
+  );
+
   const salesData = await Promise.all(
     months.map(async ({ start, end, label }) => {
-      // ✅ Filtrar por usuario
       const rows = await prisma.salesData.findMany({
         where: {
-          userId: userId, // ✅ Filtrar por usuario específico
+          userId,
           date: {
             gte: start,
             lte: end,
@@ -133,10 +154,9 @@ export const getTrendsData = async (userId: string) => {
         },
       });
 
-      // Sumar ventas e ingresos manualmente
-      const totalSales = rows.reduce((acc, row) => acc + row.quantity, 0);
+      const totalSales = rows.reduce((acc, r) => acc + r.quantity, 0);
       const totalRevenue = rows.reduce(
-        (acc, row) => acc + row.quantity * row.price,
+        (acc, r) => acc + r.quantity * r.price,
         0
       );
 
