@@ -99,8 +99,8 @@ El servidor estará disponible en `http://localhost:3000`
 **Cuerpo de la petición:**
 ```json
 {
-  "email": "santiago@gmail.com",
-  "password": "password123"
+  "email": "admin@gmail.com",
+  "password": "admin123"
 }
 ```
 
